@@ -263,7 +263,7 @@ func NewServer(opts *Options) (*Server, error) {
 	pub, _ := kp.PublicKey()
 
 	serverName := pub
-	if opts.ServerName != "" {
+	if opts.ServerName != _EMPTY_ {
 		serverName = opts.ServerName
 	}
 
@@ -539,6 +539,9 @@ func validateOptions(o *Options) error {
 	if err := validateMQTTOptions(o); err != nil {
 		return err
 	}
+	if err := validateJetStreamOptions(o); err != nil {
+		return err
+	}
 	// Finally check websocket options.
 	return validateWebsocketOptions(o)
 }
@@ -756,6 +759,10 @@ func (s *Server) globalAccountOnly() bool {
 func (s *Server) standAloneMode() bool {
 	opts := s.getOpts()
 	return opts.Cluster.Port == 0 && opts.LeafNode.Port == 0 && opts.Gateway.Port == 0
+}
+
+func (s *Server) configuredRoutes() int {
+	return len(s.getOpts().Routes)
 }
 
 // isTrustedIssuer will check that the issuer is a trusted public key.

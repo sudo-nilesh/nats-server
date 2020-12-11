@@ -768,7 +768,8 @@ func (o *Consumer) sendAckReply(subj string) {
 }
 
 // Process a message for the ack reply subject delivered with a message.
-func (o *Consumer) processAck(_ *subscription, _ *client, subject, reply string, msg []byte) {
+func (o *Consumer) processAck(_ *subscription, c *client, subject, reply string, rmsg []byte) {
+	_, msg := c.msgParts(rmsg)
 	sseq, dseq, dc := ackReplyInfo(subject)
 
 	skipAckReply := sseq == 0
@@ -1413,7 +1414,7 @@ var errBadConsumer = errors.New("consumer not valid")
 // Is partition aware and redeliver aware.
 // Lock should be held.
 func (o *Consumer) getNextMsg() (subj string, hdr, msg []byte, seq uint64, dc uint64, ts int64, err error) {
-	if o.mset == nil {
+	if o.mset == nil || o.mset.store == nil {
 		return _EMPTY_, nil, nil, 0, 0, 0, errBadConsumer
 	}
 	for {

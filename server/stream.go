@@ -122,7 +122,7 @@ type ddentry struct {
 // Replicas Range
 const (
 	StreamDefaultReplicas = 1
-	StreamMaxReplicas     = 7
+	StreamMaxReplicas     = 5
 )
 
 // AddStream adds a stream for the given account.
@@ -141,6 +141,12 @@ func (a *Account) AddStreamWithStore(config *StreamConfig, fsConfig *FileStoreCo
 	cfg, err := checkStreamCfg(config)
 	if err != nil {
 		return nil, err
+	}
+
+	// If we do not have the stream assigned to us in cluster mode we can not proceed.
+	// Running in single server mode this always returns true.
+	if !jsa.streamAssigned(config.Name) {
+		return nil, ErrJetStreamNotLeader
 	}
 
 	jsa.mu.Lock()
@@ -435,13 +441,12 @@ func checkStreamCfg(config *StreamConfig) (StreamConfig, error) {
 	}
 	cfg := *config
 
-	// TODO(dlc) - check config for conflicts, e.g replicas > 1 in single server mode.
+	// Make file the default.
+	if cfg.Storage == 0 {
+		cfg.Storage = FileStorage
+	}
 	if cfg.Replicas == 0 {
 		cfg.Replicas = 1
-	}
-	// TODO(dlc) - Remove when clustering happens.
-	if cfg.Replicas > 1 {
-		return StreamConfig{}, fmt.Errorf("maximum replicas is 1")
 	}
 	if cfg.Replicas > StreamMaxReplicas {
 		return cfg, fmt.Errorf("maximum replicas is %d", StreamMaxReplicas)
@@ -770,7 +775,7 @@ func (mset *Stream) setupStore(fsCfg *FileStoreConfig) error {
 		}
 		mset.store = ms
 	case FileStorage:
-		fs, err := newFileStoreWithCreated(*fsCfg, mset.config, mset.created)
+		fs, _, err := newFileStoreWithCreated(*fsCfg, mset.config, mset.created)
 		if err != nil {
 			mset.mu.Unlock()
 			return err
