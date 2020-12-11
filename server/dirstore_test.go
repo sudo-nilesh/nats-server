@@ -805,35 +805,49 @@ func TestTTL(t *testing.T) {
 		require_NoError(t, err)
 		require_Len(t, len(f), 1)
 	}
-	dirStore, err := NewExpiringDirJWTStore(dir, false, false, NoDelete, 50*time.Millisecond, 10, true, time.Second, nil)
-	require_NoError(t, err)
-	defer dirStore.Close()
+	test := func(op func(store *DirJWTStore, accountKey nkeys.KeyPair, accountPubKey string, jwt string)) {
+		dirStore, err := NewExpiringDirJWTStore(dir, false, false, NoDelete, 50*time.Millisecond, 10, true, time.Second, nil)
+		require_NoError(t, err)
+		defer dirStore.Close()
 
-	accountKey, err := nkeys.CreateAccount()
-	require_NoError(t, err)
-	pubKey, err := accountKey.PublicKey()
-	require_NoError(t, err)
-	jwt := createTestAccount(t, dirStore, 0, accountKey)
-	require_OneJWT()
-	for i := 0; i < 3; i++ {
-		time.Sleep(250 * time.Millisecond)
-		dirStore.LoadAcc(pubKey)
+		accountKey, err := nkeys.CreateAccount()
+		require_NoError(t, err)
+		pubKey, err := accountKey.PublicKey()
+		require_NoError(t, err)
+		jwt := createTestAccount(t, dirStore, 0, accountKey)
 		require_OneJWT()
+		// observe non expiration due to activity
+		for i := 0; i < 5; i++ {
+			time.Sleep(250 * time.Millisecond)
+			op(dirStore, accountKey, pubKey, jwt)
+			require_OneJWT()
+		}
+		// observe expiration
+		for i := 0; i < 40; i++ {
+			time.Sleep(50 * time.Millisecond)
+			f, err := ioutil.ReadDir(dir)
+			require_NoError(t, err)
+			if len(f) == 0 {
+				return
+			}
+		}
+		t.Fatalf("jwt should have expired by now")
 	}
-	for i := 0; i < 3; i++ {
-		time.Sleep(250 * time.Millisecond)
-		dirStore.SaveAcc(pubKey, jwt)
-		require_OneJWT()
-	}
-	for i := 0; i < 3; i++ {
-		time.Sleep(250 * time.Millisecond)
-		createTestAccount(t, dirStore, 0, accountKey)
-		require_OneJWT()
-	}
-	time.Sleep(2 * time.Second)
-	f, err := ioutil.ReadDir(dir)
-	require_NoError(t, err)
-	require_Len(t, len(f), 0)
+	t.Run("no expiration due to load", func(t *testing.T) {
+		test(func(store *DirJWTStore, accountKey nkeys.KeyPair, pubKey string, jwt string) {
+			store.LoadAcc(pubKey)
+		})
+	})
+	t.Run("no expiration due to store", func(t *testing.T) {
+		test(func(store *DirJWTStore, accountKey nkeys.KeyPair, pubKey string, jwt string) {
+			store.SaveAcc(pubKey, jwt)
+		})
+	})
+	t.Run("no expiration due to overwrite", func(t *testing.T) {
+		test(func(store *DirJWTStore, accountKey nkeys.KeyPair, pubKey string, jwt string) {
+			createTestAccount(t, store, 0, accountKey)
+		})
+	})
 }
 
 func TestRemove(t *testing.T) {
